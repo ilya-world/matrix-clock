@@ -1,5 +1,8 @@
 const grid = document.getElementById("grid");
 const startTimeInput = document.getElementById("startTime");
+const endTimeInput = document.getElementById("endTime");
+const endTimeHint = document.getElementById("endTimeHint");
+const daysList = document.getElementById("daysList");
 const paletteForm = document.getElementById("paletteForm");
 const colorInput = document.getElementById("colorInput");
 const labelInput = document.getElementById("labelInput");
@@ -7,13 +10,96 @@ const paletteList = document.getElementById("paletteList");
 const eraserButton = document.getElementById("eraser");
 
 const baseCells = 100;
-const palette = [];
-let activePaletteId = null;
-const userPaint = new Map();
-
 const minutesPerCell = 10;
 const msPerCell = minutesPerCell * 60 * 1000;
+const dayBoundaryMinutes = 4 * 60;
+const storageKey = "matrix-clock-days-v1";
+
+let palette = [];
+let paletteById = new Map();
+let activePaletteId = null;
+let userPaint = new Map();
+
 let updateTimeoutId = null;
+let currentDayKey = getCurrentDayKey();
+
+const storage = loadStorage();
+ensureDayState(currentDayKey);
+let selectedDayKey = storage.activeDayKey && storage.days[storage.activeDayKey]
+  ? storage.activeDayKey
+  : currentDayKey;
+
+function loadStorage() {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") {
+      return { days: {}, activeDayKey: null };
+    }
+    return {
+      days: parsed.days && typeof parsed.days === "object" ? parsed.days : {},
+      activeDayKey: parsed.activeDayKey || null,
+    };
+  } catch (error) {
+    return { days: {}, activeDayKey: null };
+  }
+}
+
+function saveStorage() {
+  localStorage.setItem(storageKey, JSON.stringify(storage));
+}
+
+function createDayState(dateKey) {
+  return {
+    dateKey,
+    startTime: "07:00",
+    endTime: "04:00",
+    palette: [],
+    paints: {},
+    frozenElapsed: 0,
+    lastVisited: null,
+  };
+}
+
+function ensureDayState(dateKey) {
+  if (!storage.days[dateKey]) {
+    storage.days[dateKey] = createDayState(dateKey);
+  }
+  return storage.days[dateKey];
+}
+
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDisplayDate(dateKey) {
+  const date = parseDateKey(dateKey);
+  return date.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+  });
+}
+
+function getCurrentDayKey(now = new Date()) {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const dayDate = new Date(now);
+  if (minutes < dayBoundaryMinutes) {
+    dayDate.setDate(dayDate.getDate() - 1);
+  }
+  return formatDateKey(dayDate);
+}
+
+function isCurrentDay(dateKey) {
+  return dateKey === currentDayKey;
+}
 
 function parseStartTime(value) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -26,6 +112,10 @@ function formatTime(hours, minutes) {
   return `${String(safeHours).padStart(2, "0")}:${String(safeMinutes).padStart(2, "0")}`;
 }
 
+function formatTimeFromDate(date) {
+  return formatTime(date.getHours(), date.getMinutes());
+}
+
 function getIntervalLabel(index, startTime) {
   const startMinutes = startTime.hours * 60 + startTime.minutes + index * minutesPerCell;
   const endMinutes = startMinutes + minutesPerCell;
@@ -34,21 +124,45 @@ function getIntervalLabel(index, startTime) {
   return `${startLabel}–${endLabel}`;
 }
 
-function getElapsedCells(startTime) {
-  const now = new Date();
-  const start = new Date();
+function getStartDateForDay(dateKey, startTime) {
+  const start = parseDateKey(dateKey);
   start.setHours(startTime.hours, startTime.minutes, 0, 0);
-  const diff = now.getTime() - start.getTime();
+  return start;
+}
+
+function getEndDateForDay(dateKey, endTime, startTime) {
+  const end = parseDateKey(dateKey);
+  end.setHours(endTime.hours, endTime.minutes, 0, 0);
+  const startDate = getStartDateForDay(dateKey, startTime);
+  if (end.getTime() < startDate.getTime()) {
+    end.setDate(end.getDate() + 1);
+  }
+  return end;
+}
+
+function getElapsedCellsBetween(startDate, endDate) {
+  const diff = endDate.getTime() - startDate.getTime();
   if (diff <= 0) {
     return 0;
   }
   return Math.floor(diff / msPerCell);
 }
 
-function getMsUntilNextCell(startTime) {
+function getElapsedCellsNow(dateKey, startTime) {
   const now = new Date();
-  const start = new Date();
-  start.setHours(startTime.hours, startTime.minutes, 0, 0);
+  const startDate = getStartDateForDay(dateKey, startTime);
+  return getElapsedCellsBetween(startDate, now);
+}
+
+function getElapsedCellsForEndTime(dateKey, startTime, endTime) {
+  const startDate = getStartDateForDay(dateKey, startTime);
+  const endDate = getEndDateForDay(dateKey, endTime, startTime);
+  return getElapsedCellsBetween(startDate, endDate);
+}
+
+function getMsUntilNextCell(dateKey, startTime) {
+  const now = new Date();
+  const start = getStartDateForDay(dateKey, startTime);
   const diff = now.getTime() - start.getTime();
   if (diff < 0) {
     return -diff;
@@ -75,9 +189,27 @@ function mixWithWhite(hex, amount = 0.35) {
   if (!rgb) {
     return hex;
   }
-  const mix = (channel) =>
-    Math.round(channel + (255 - channel) * amount);
+  const mix = (channel) => Math.round(channel + (255 - channel) * amount);
   return `rgb(${mix(rgb.r)}, ${mix(rgb.g)}, ${mix(rgb.b)})`;
+}
+
+function syncPaletteLookup() {
+  paletteById = new Map(palette.map((item) => [item.id, item]));
+}
+
+function applyUserPaint(cell) {
+  const index = Number(cell.dataset.index);
+  const paletteId = userPaint.get(index);
+  const paint = paletteById.get(paletteId);
+  if (paint) {
+    const isPast =
+      cell.classList.contains("elapsed") || cell.classList.contains("overflow");
+    cell.style.background = isPast ? paint.color : mixWithWhite(paint.color);
+    cell.classList.add("user-painted");
+  } else {
+    cell.style.background = "";
+    cell.classList.remove("user-painted");
+  }
 }
 
 function createCell(index, type, startTime) {
@@ -97,23 +229,21 @@ function createCell(index, type, startTime) {
   return cell;
 }
 
-function applyUserPaint(cell) {
-  const index = Number(cell.dataset.index);
-  const paint = userPaint.get(index);
-  if (paint) {
-    const isPast =
-      cell.classList.contains("elapsed") || cell.classList.contains("overflow");
-    cell.style.background = isPast ? paint.color : mixWithWhite(paint.color);
-    cell.classList.add("user-painted");
-  } else {
-    cell.style.background = "";
-    cell.classList.remove("user-painted");
+function getDisplayElapsed(startTime) {
+  const dayState = ensureDayState(selectedDayKey);
+  if (isCurrentDay(selectedDayKey)) {
+    return getElapsedCellsNow(selectedDayKey, startTime);
   }
+  if (typeof dayState.frozenElapsed === "number") {
+    return dayState.frozenElapsed;
+  }
+  const endTime = parseStartTime(dayState.endTime || "04:00");
+  return getElapsedCellsForEndTime(selectedDayKey, startTime, endTime);
 }
 
 function renderGrid() {
   const startTime = parseStartTime(startTimeInput.value);
-  const elapsed = getElapsedCells(startTime);
+  const elapsed = getDisplayElapsed(startTime);
   const totalCells = elapsed > baseCells ? baseCells + (elapsed - baseCells) : baseCells;
   grid.innerHTML = "";
 
@@ -131,12 +261,26 @@ function scheduleGridUpdate() {
   if (updateTimeoutId) {
     window.clearTimeout(updateTimeoutId);
   }
-  const startTime = parseStartTime(startTimeInput.value);
-  const delay = getMsUntilNextCell(startTime);
+  if (!isCurrentDay(selectedDayKey)) {
+    return;
+  }
+  const dayState = ensureDayState(selectedDayKey);
+  const startTime = parseStartTime(dayState.startTime);
+  const delay = getMsUntilNextCell(selectedDayKey, startTime);
   updateTimeoutId = window.setTimeout(() => {
+    checkDayRollover();
+    if (!isCurrentDay(selectedDayKey)) {
+      return;
+    }
+    updateCurrentDayProgress();
     renderGrid();
     scheduleGridUpdate();
   }, delay);
+}
+
+function renderPaletteList() {
+  paletteList.innerHTML = "";
+  palette.forEach((item) => addPaletteItem(item));
 }
 
 function addPaletteItem({ id, color, label }) {
@@ -163,13 +307,115 @@ function handleCellPaint(cell) {
   if (activePaletteId === null) {
     userPaint.delete(index);
   } else {
-    const selected = palette.find((item) => item.id === activePaletteId);
-    if (!selected) {
-      return;
-    }
-    userPaint.set(index, selected);
+    userPaint.set(index, activePaletteId);
   }
   applyUserPaint(cell);
+  persistSelectedDay();
+}
+
+function persistSelectedDay() {
+  const dayState = ensureDayState(selectedDayKey);
+  dayState.startTime = startTimeInput.value;
+  dayState.endTime = endTimeInput.value;
+  dayState.palette = [...palette];
+  dayState.paints = Object.fromEntries(userPaint);
+  storage.activeDayKey = selectedDayKey;
+  saveStorage();
+  renderDaysList();
+}
+
+function updateCurrentDayProgress() {
+  const dayState = ensureDayState(currentDayKey);
+  const startTime = parseStartTime(dayState.startTime);
+  const now = new Date();
+  dayState.frozenElapsed = getElapsedCellsNow(currentDayKey, startTime);
+  dayState.lastVisited = now.toISOString();
+  dayState.endTime = formatTimeFromDate(now);
+  saveStorage();
+  renderDaysList();
+}
+
+function updateEndTimeState() {
+  if (isCurrentDay(selectedDayKey)) {
+    endTimeInput.disabled = true;
+    endTimeHint.textContent = "Настраивается для прошедших дней.";
+  } else {
+    endTimeInput.disabled = false;
+    endTimeHint.textContent = "Влияет на число красных клеток за день.";
+  }
+}
+
+function renderDaysList() {
+  daysList.innerHTML = "";
+  const keys = Object.keys(storage.days);
+  if (!keys.includes(currentDayKey)) {
+    keys.push(currentDayKey);
+  }
+  keys.sort((a, b) => b.localeCompare(a));
+  keys.forEach((key) => {
+    const dayState = ensureDayState(key);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "days__item";
+    if (key === selectedDayKey) {
+      button.classList.add("active");
+    }
+    const title = key === currentDayKey ? "Сегодня" : formatDisplayDate(key);
+    const lastVisit = dayState.lastVisited
+      ? `Последний визит: ${formatTimeFromDate(new Date(dayState.lastVisited))}`
+      : "Нет посещений";
+    const details = key === currentDayKey
+      ? `Текущий день · ${lastVisit}`
+      : lastVisit;
+    button.innerHTML = `<strong>${title}</strong><span>${details}</span>`;
+    button.addEventListener("click", () => switchDay(key));
+    daysList.appendChild(button);
+  });
+}
+
+function loadDay(dateKey) {
+  const dayState = ensureDayState(dateKey);
+  selectedDayKey = dateKey;
+  startTimeInput.value = dayState.startTime || "07:00";
+  endTimeInput.value = dayState.endTime || "04:00";
+  palette = Array.isArray(dayState.palette) ? [...dayState.palette] : [];
+  userPaint = new Map(
+    Object.entries(dayState.paints || {}).map(([index, id]) => [Number(index), id])
+  );
+  syncPaletteLookup();
+  renderPaletteList();
+  setActivePalette(null);
+  updateEndTimeState();
+  renderGrid();
+  renderDaysList();
+  scheduleGridUpdate();
+}
+
+function switchDay(dateKey) {
+  if (dateKey === selectedDayKey) {
+    return;
+  }
+  persistSelectedDay();
+  if (isCurrentDay(selectedDayKey)) {
+    updateCurrentDayProgress();
+  }
+  loadDay(dateKey);
+}
+
+function checkDayRollover() {
+  const latestDayKey = getCurrentDayKey();
+  if (latestDayKey === currentDayKey) {
+    return;
+  }
+  const previousCurrent = currentDayKey;
+  updateCurrentDayProgress();
+  currentDayKey = latestDayKey;
+  ensureDayState(currentDayKey);
+  if (selectedDayKey === previousCurrent) {
+    loadDay(currentDayKey);
+  } else {
+    renderDaysList();
+  }
 }
 
 paletteForm.addEventListener("submit", (event) => {
@@ -182,9 +428,11 @@ paletteForm.addEventListener("submit", (event) => {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const paletteItem = { id, color, label };
   palette.push(paletteItem);
+  syncPaletteLookup();
   addPaletteItem(paletteItem);
   labelInput.value = "";
   setActivePalette(id);
+  persistSelectedDay();
 });
 
 eraserButton.addEventListener("click", () => {
@@ -192,10 +440,41 @@ eraserButton.addEventListener("click", () => {
 });
 
 startTimeInput.addEventListener("change", () => {
+  const dayState = ensureDayState(selectedDayKey);
+  dayState.startTime = startTimeInput.value;
+  if (isCurrentDay(selectedDayKey)) {
+    updateCurrentDayProgress();
+  }
+  saveStorage();
   renderGrid();
   scheduleGridUpdate();
 });
 
+endTimeInput.addEventListener("change", () => {
+  const dayState = ensureDayState(selectedDayKey);
+  dayState.endTime = endTimeInput.value;
+  if (!isCurrentDay(selectedDayKey)) {
+    const startTime = parseStartTime(dayState.startTime || "07:00");
+    const endTime = parseStartTime(dayState.endTime || "04:00");
+    dayState.frozenElapsed = getElapsedCellsForEndTime(
+      selectedDayKey,
+      startTime,
+      endTime
+    );
+  }
+  saveStorage();
+  renderGrid();
+  renderDaysList();
+});
+
+window.addEventListener("beforeunload", () => {
+  persistSelectedDay();
+  if (isCurrentDay(selectedDayKey)) {
+    updateCurrentDayProgress();
+  }
+});
+
 setActivePalette(null);
-renderGrid();
-scheduleGridUpdate();
+loadDay(selectedDayKey);
+updateCurrentDayProgress();
+window.setInterval(checkDayRollover, 60000);

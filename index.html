@@ -32,6 +32,21 @@
               <span>Начало дня</span>
               <input id="startTime" type="time" value="07:00" />
             </label>
+            <label class="control">
+              <span>Конец дня</span>
+              <input id="endTime" type="time" value="04:00" />
+              <span id="endTimeHint" class="control__hint"></span>
+            </label>
+          </section>
+
+          <section class="card">
+            <div class="days">
+              <div class="days__header">
+                <h2>Сохраненные дни</h2>
+                <p>Текущий и предыдущие записи.</p>
+              </div>
+              <div id="daysList" class="days__list" aria-live="polite"></div>
+            </div>
           </section>
 
           <section class="palette">

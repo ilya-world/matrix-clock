@@ -13,6 +13,7 @@ const userPaint = new Map();
 
 const minutesPerCell = 10;
 const msPerCell = minutesPerCell * 60 * 1000;
+let updateTimeoutId = null;
 
 function parseStartTime(value) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -44,6 +45,41 @@ function getElapsedCells(startTime) {
   return Math.floor(diff / msPerCell);
 }
 
+function getMsUntilNextCell(startTime) {
+  const now = new Date();
+  const start = new Date();
+  start.setHours(startTime.hours, startTime.minutes, 0, 0);
+  const diff = now.getTime() - start.getTime();
+  if (diff < 0) {
+    return -diff;
+  }
+  const remainder = diff % msPerCell;
+  return remainder === 0 ? msPerCell : msPerCell - remainder;
+}
+
+function hexToRgb(hex) {
+  const value = hex.replace("#", "");
+  if (value.length !== 6) {
+    return null;
+  }
+  const number = Number.parseInt(value, 16);
+  return {
+    r: (number >> 16) & 255,
+    g: (number >> 8) & 255,
+    b: number & 255,
+  };
+}
+
+function mixWithWhite(hex, amount = 0.35) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) {
+    return hex;
+  }
+  const mix = (channel) =>
+    Math.round(channel + (255 - channel) * amount);
+  return `rgb(${mix(rgb.r)}, ${mix(rgb.g)}, ${mix(rgb.b)})`;
+}
+
 function createCell(index, type, startTime) {
   const cell = document.createElement("button");
   cell.type = "button";
@@ -65,7 +101,9 @@ function applyUserPaint(cell) {
   const index = Number(cell.dataset.index);
   const paint = userPaint.get(index);
   if (paint) {
-    cell.style.background = paint.color;
+    const isPast =
+      cell.classList.contains("elapsed") || cell.classList.contains("overflow");
+    cell.style.background = isPast ? paint.color : mixWithWhite(paint.color);
     cell.classList.add("user-painted");
   } else {
     cell.style.background = "";
@@ -87,6 +125,18 @@ function renderGrid() {
     const cell = createCell(i, type, startTime);
     grid.appendChild(cell);
   }
+}
+
+function scheduleGridUpdate() {
+  if (updateTimeoutId) {
+    window.clearTimeout(updateTimeoutId);
+  }
+  const startTime = parseStartTime(startTimeInput.value);
+  const delay = getMsUntilNextCell(startTime);
+  updateTimeoutId = window.setTimeout(() => {
+    renderGrid();
+    scheduleGridUpdate();
+  }, delay);
 }
 
 function addPaletteItem({ id, color, label }) {
@@ -143,8 +193,9 @@ eraserButton.addEventListener("click", () => {
 
 startTimeInput.addEventListener("change", () => {
   renderGrid();
+  scheduleGridUpdate();
 });
 
 setActivePalette(null);
 renderGrid();
-setInterval(renderGrid, 60 * 1000);
+scheduleGridUpdate();

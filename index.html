@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matrix Clock</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        <div>
+          <h1>Матрица времени</h1>
+          <p class="app__subtitle">
+            1 квадрат = 10 минут. Серые клетки — прошедшее время.
+          </p>
+        </div>
+        <div class="app__controls">
+          <label class="control">
+            <span>Начало дня</span>
+            <input id="startTime" type="time" value="07:00" />
+          </label>
+        </div>
+      </header>
+
+      <section class="palette">
+        <div class="palette__header">
+          <h2>Палитра</h2>
+          <p>Добавляйте цвета и отмечайте ими ячейки.</p>
+        </div>
+        <form id="paletteForm" class="palette__form">
+          <label class="control">
+            <span>Цвет</span>
+            <input id="colorInput" type="color" value="#ff6fae" />
+          </label>
+          <label class="control">
+            <span>Назначение</span>
+            <input
+              id="labelInput"
+              type="text"
+              placeholder="Например, работа"
+              maxlength="24"
+              required
+            />
+          </label>
+          <button type="submit" class="button">Добавить</button>
+          <button type="button" id="eraser" class="button button--ghost">
+            Ластик
+          </button>
+        </form>
+        <div id="paletteList" class="palette__list" aria-live="polite"></div>
+      </section>
+
+      <section class="matrix">
+        <div class="matrix__legend">
+          <span class="legend legend--elapsed">Прошедшее время</span>
+          <span class="legend legend--overflow">Время за пределами 100 клеток</span>
+        </div>
+        <div id="grid" class="matrix__grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -59,6 +59,17 @@ body {
   color: #4a4a57;
 }
 
+.control--toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.control--toggle input {
+  width: 18px;
+  height: 18px;
+}
+
 .control__hint {
   font-size: 12px;
   color: #8b8b98;
@@ -224,18 +235,43 @@ body {
 .palette__item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  cursor: pointer;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-radius: 16px;
+  border: 1px solid #e3e6ee;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   background: #f7f8fb;
+  position: relative;
 }
 
-.palette__item span {
+.palette__label {
   font-size: 13px;
   font-weight: 600;
+}
+
+.palette__select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+  transition: background 0.2s ease;
+}
+
+.palette__select:hover {
+  background: rgba(47, 111, 237, 0.08);
+}
+
+.palette__select:focus-visible {
+  outline: 2px solid #2f6fed;
+  outline-offset: 2px;
 }
 
 .palette__item.active {
@@ -248,6 +284,35 @@ body {
   height: 22px;
   border-radius: 6px;
   border: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.palette__remove {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border: none;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 6px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.palette__item:hover .palette__remove,
+.palette__remove:focus-visible {
+  opacity: 1;
+}
+
+.palette__remove:focus-visible {
+  outline: 2px solid #2f6fed;
+  outline-offset: 2px;
 }
 
 .matrix {
@@ -324,6 +389,23 @@ body {
 
 .matrix__cell.user-painted {
   border-color: rgba(0, 0, 0, 0.16);
+}
+
+.matrix__cell.has-time {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #0f172a;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
+}
+
+.matrix__cell.has-time span {
+  pointer-events: none;
 }
 
 @media (max-width: 720px) {

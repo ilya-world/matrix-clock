@@ -116,6 +116,22 @@ function formatTimeFromDate(date) {
   return formatTime(date.getHours(), date.getMinutes());
 }
 
+function getLastVisitDisplay(dateKey, dayState) {
+  if (!dayState.lastVisited) {
+    return "Нет посещений";
+  }
+  const lastVisitDate = new Date(dayState.lastVisited);
+  if (!isCurrentDay(dateKey)) {
+    const boundary = parseDateKey(dateKey);
+    boundary.setDate(boundary.getDate() + 1);
+    boundary.setHours(4, 0, 0, 0);
+    if (lastVisitDate.getTime() > boundary.getTime()) {
+      lastVisitDate.setTime(boundary.getTime());
+    }
+  }
+  return `Последний визит: ${formatTimeFromDate(lastVisitDate)}`;
+}
+
 function getIntervalLabel(index, startTime) {
   const startMinutes = startTime.hours * 60 + startTime.minutes + index * minutesPerCell;
   const endMinutes = startMinutes + minutesPerCell;
@@ -345,6 +361,25 @@ function updateEndTimeState() {
   }
 }
 
+function deleteDay(dateKey) {
+  if (isCurrentDay(dateKey)) {
+    return;
+  }
+  delete storage.days[dateKey];
+  if (storage.activeDayKey === dateKey) {
+    storage.activeDayKey = null;
+  }
+  if (selectedDayKey === dateKey) {
+    selectedDayKey = currentDayKey;
+    ensureDayState(currentDayKey);
+    saveStorage();
+    loadDay(currentDayKey);
+    return;
+  }
+  saveStorage();
+  renderDaysList();
+}
+
 function renderDaysList() {
   daysList.innerHTML = "";
   const keys = Object.keys(storage.days);
@@ -354,22 +389,37 @@ function renderDaysList() {
   keys.sort((a, b) => b.localeCompare(a));
   keys.forEach((key) => {
     const dayState = ensureDayState(key);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "days__item";
+    const item = document.createElement("div");
+    item.className = "days__item";
     if (key === selectedDayKey) {
-      button.classList.add("active");
+      item.classList.add("active");
     }
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "days__select";
     const title = key === currentDayKey ? "Сегодня" : formatDisplayDate(key);
-    const lastVisit = dayState.lastVisited
-      ? `Последний визит: ${formatTimeFromDate(new Date(dayState.lastVisited))}`
-      : "Нет посещений";
+    const lastVisit = getLastVisitDisplay(key, dayState);
     const details = key === currentDayKey
       ? `Текущий день · ${lastVisit}`
       : lastVisit;
-    button.innerHTML = `<strong>${title}</strong><span>${details}</span>`;
-    button.addEventListener("click", () => switchDay(key));
-    daysList.appendChild(button);
+    selectButton.innerHTML = `<strong>${title}</strong><span>${details}</span>`;
+    selectButton.addEventListener("click", () => switchDay(key));
+    item.appendChild(selectButton);
+
+    if (!isCurrentDay(key)) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "days__delete";
+      deleteButton.setAttribute("aria-label", "Удалить день");
+      deleteButton.innerHTML = "🗑️";
+      deleteButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteDay(key);
+      });
+      item.appendChild(deleteButton);
+    }
+
+    daysList.appendChild(item);
   });
 }
 

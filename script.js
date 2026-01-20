@@ -8,6 +8,7 @@ const colorInput = document.getElementById("colorInput");
 const labelInput = document.getElementById("labelInput");
 const paletteList = document.getElementById("paletteList");
 const eraserButton = document.getElementById("eraser");
+const cellTimeToggle = document.getElementById("cellTimeToggle");
 
 const baseCells = 100;
 const minutesPerCell = 10;
@@ -19,6 +20,7 @@ let palette = [];
 let paletteById = new Map();
 let activePaletteId = null;
 let userPaint = new Map();
+let showCellTime = false;
 
 let updateTimeoutId = null;
 let currentDayKey = getCurrentDayKey();
@@ -34,14 +36,16 @@ function loadStorage() {
     const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== "object") {
-      return { days: {}, activeDayKey: null };
+      return { days: {}, activeDayKey: null, palette: [], showCellTime: false };
     }
     return {
       days: parsed.days && typeof parsed.days === "object" ? parsed.days : {},
       activeDayKey: parsed.activeDayKey || null,
+      palette: Array.isArray(parsed.palette) ? parsed.palette : [],
+      showCellTime: Boolean(parsed.showCellTime),
     };
   } catch (error) {
-    return { days: {}, activeDayKey: null };
+    return { days: {}, activeDayKey: null, palette: [], showCellTime: false };
   }
 }
 
@@ -54,7 +58,6 @@ function createDayState(dateKey) {
     dateKey,
     startTime: "07:00",
     endTime: "04:00",
-    palette: [],
     paints: {},
     frozenElapsed: 0,
     lastVisited: null,
@@ -239,6 +242,16 @@ function createCell(index, type, startTime) {
   if (type === "overflow") {
     cell.classList.add("overflow");
   }
+  if (showCellTime) {
+    const startMinutes = startTime.hours * 60 + startTime.minutes + index * minutesPerCell;
+    const timeLabel = formatTime(
+      Math.floor(startMinutes / 60),
+      startMinutes % 60
+    );
+    const [hours, minutes] = timeLabel.split(":");
+    cell.classList.add("has-time");
+    cell.innerHTML = `<span>${hours}</span><span>${minutes}</span>`;
+  }
   cell.title = getIntervalLabel(index, startTime);
   cell.addEventListener("click", () => handleCellPaint(cell));
   applyUserPaint(cell);
@@ -300,12 +313,25 @@ function renderPaletteList() {
 }
 
 function addPaletteItem({ id, color, label }) {
-  const item = document.createElement("button");
-  item.type = "button";
+  const item = document.createElement("div");
   item.className = "palette__item";
   item.dataset.id = id;
-  item.innerHTML = `<span class="palette__swatch" style="background:${color}"></span><span>${label}</span>`;
-  item.addEventListener("click", () => setActivePalette(id));
+  const selectButton = document.createElement("button");
+  selectButton.type = "button";
+  selectButton.className = "palette__select";
+  selectButton.innerHTML = `<span class="palette__swatch" style="background:${color}"></span><span class="palette__label">${label}</span>`;
+  selectButton.addEventListener("click", () => setActivePalette(id));
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "palette__remove";
+  removeButton.setAttribute("aria-label", "Удалить цвет");
+  removeButton.textContent = "×";
+  removeButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    removePaletteItem(id);
+  });
+  item.appendChild(selectButton);
+  item.appendChild(removeButton);
   paletteList.appendChild(item);
 }
 
@@ -333,7 +359,8 @@ function persistSelectedDay() {
   const dayState = ensureDayState(selectedDayKey);
   dayState.startTime = startTimeInput.value;
   dayState.endTime = endTimeInput.value;
-  dayState.palette = [...palette];
+  storage.palette = [...palette];
+  storage.showCellTime = showCellTime;
   dayState.paints = Object.fromEntries(userPaint);
   storage.activeDayKey = selectedDayKey;
   saveStorage();
@@ -428,7 +455,9 @@ function loadDay(dateKey) {
   selectedDayKey = dateKey;
   startTimeInput.value = dayState.startTime || "07:00";
   endTimeInput.value = dayState.endTime || "04:00";
-  palette = Array.isArray(dayState.palette) ? [...dayState.palette] : [];
+  palette = Array.isArray(storage.palette) ? [...storage.palette] : [];
+  showCellTime = Boolean(storage.showCellTime);
+  cellTimeToggle.checked = showCellTime;
   userPaint = new Map(
     Object.entries(dayState.paints || {}).map(([index, id]) => [Number(index), id])
   );
@@ -468,6 +497,33 @@ function checkDayRollover() {
   }
 }
 
+function removePaletteItem(id) {
+  palette = palette.filter((item) => item.id !== id);
+  syncPaletteLookup();
+  Object.values(storage.days).forEach((dayState) => {
+    if (!dayState.paints) {
+      return;
+    }
+    Object.entries(dayState.paints).forEach(([index, paintId]) => {
+      if (paintId === id) {
+        delete dayState.paints[index];
+      }
+    });
+  });
+  userPaint.forEach((paintId, index) => {
+    if (paintId === id) {
+      userPaint.delete(index);
+    }
+  });
+  if (activePaletteId === id) {
+    setActivePalette(null);
+  }
+  storage.palette = [...palette];
+  saveStorage();
+  renderPaletteList();
+  renderGrid();
+}
+
 paletteForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const color = colorInput.value.trim();
@@ -487,6 +543,12 @@ paletteForm.addEventListener("submit", (event) => {
 
 eraserButton.addEventListener("click", () => {
   setActivePalette(null);
+});
+
+cellTimeToggle.addEventListener("change", () => {
+  showCellTime = cellTimeToggle.checked;
+  persistSelectedDay();
+  renderGrid();
 });
 
 startTimeInput.addEventListener("change", () => {
@@ -524,6 +586,17 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
+if (!storage.palette.length) {
+  const legacyPaletteSource = storage.activeDayKey && storage.days[storage.activeDayKey]
+    ? storage.days[storage.activeDayKey]
+    : storage.days[currentDayKey];
+  if (legacyPaletteSource && Array.isArray(legacyPaletteSource.palette)) {
+    storage.palette = [...legacyPaletteSource.palette];
+  }
+}
+
+showCellTime = Boolean(storage.showCellTime);
+cellTimeToggle.checked = showCellTime;
 setActivePalette(null);
 loadDay(selectedDayKey);
 updateCurrentDayProgress();

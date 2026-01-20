@@ -140,13 +140,27 @@ body {
 .days__item {
   border: 1px solid #e3e6ee;
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f7f8fb;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.days__select {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: #f7f8fb;
+  border: none;
+  padding: 0;
+  background: transparent;
+  text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font: inherit;
+  color: inherit;
 }
 
 .days__item strong {
@@ -162,6 +176,22 @@ body {
   border-color: #2f6fed;
   box-shadow: 0 8px 16px rgba(47, 111, 237, 0.18);
   background: white;
+}
+
+.days__delete {
+  border: none;
+  background: transparent;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #6e6e7c;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.days__delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
 }
 
 .palette {

@@ -301,7 +301,7 @@ function scheduleGridUpdate() {
     if (!isCurrentDay(selectedDayKey)) {
       return;
     }
-    updateCurrentDayProgress();
+    updateCurrentDayProgress({ updateLastVisited: false });
     renderGrid();
     scheduleGridUpdate();
   }, delay);
@@ -367,12 +367,14 @@ function persistSelectedDay() {
   renderDaysList();
 }
 
-function updateCurrentDayProgress() {
+function updateCurrentDayProgress({ updateLastVisited = true } = {}) {
   const dayState = ensureDayState(currentDayKey);
   const startTime = parseStartTime(dayState.startTime);
   const now = new Date();
   dayState.frozenElapsed = getElapsedCellsNow(currentDayKey, startTime);
-  dayState.lastVisited = now.toISOString();
+  if (updateLastVisited) {
+    dayState.lastVisited = now.toISOString();
+  }
   dayState.endTime = formatTimeFromDate(now);
   saveStorage();
   renderDaysList();
@@ -476,7 +478,7 @@ function switchDay(dateKey) {
   }
   persistSelectedDay();
   if (isCurrentDay(selectedDayKey)) {
-    updateCurrentDayProgress();
+    updateCurrentDayProgress({ updateLastVisited: true });
   }
   loadDay(dateKey);
 }
@@ -487,7 +489,7 @@ function checkDayRollover() {
     return;
   }
   const previousCurrent = currentDayKey;
-  updateCurrentDayProgress();
+  updateCurrentDayProgress({ updateLastVisited: false });
   currentDayKey = latestDayKey;
   ensureDayState(currentDayKey);
   if (selectedDayKey === previousCurrent) {

@@ -239,7 +239,7 @@ function applyUserPaint(cell) {
   }
 }
 
-function createCell(index, type, startTime) {
+function createCell(index, type, startTime, isCurrent) {
   const cell = document.createElement("button");
   cell.type = "button";
   cell.className = "matrix__cell";
@@ -249,6 +249,9 @@ function createCell(index, type, startTime) {
   }
   if (type === "overflow") {
     cell.classList.add("overflow");
+  }
+  if (isCurrent) {
+    cell.classList.add("current");
   }
   if (showCellTime) {
     const startMinutes = startTime.hours * 60 + startTime.minutes + index * minutesPerCell;
@@ -281,7 +284,9 @@ function getDisplayElapsed(startTime) {
 function renderGrid() {
   const startTime = parseStartTime(startTimeInput.value);
   const elapsed = getDisplayElapsed(startTime);
-  const totalCells = elapsed > baseCells ? baseCells + (elapsed - baseCells) : baseCells;
+  const isCurrent = isCurrentDay(selectedDayKey);
+  const baseTotal = elapsed > baseCells ? baseCells + (elapsed - baseCells) : baseCells;
+  const totalCells = isCurrent ? Math.max(baseTotal, elapsed + 1) : baseTotal;
   grid.innerHTML = "";
 
   for (let i = 0; i < totalCells; i += 1) {
@@ -289,7 +294,7 @@ function renderGrid() {
     if (i < elapsed) {
       type = i < baseCells ? "elapsed" : "overflow";
     }
-    const cell = createCell(i, type, startTime);
+    const cell = createCell(i, type, startTime, isCurrent && i === elapsed);
     grid.appendChild(cell);
   }
 }

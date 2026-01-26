@@ -123,6 +123,14 @@ function getLastVisitDisplay(dateKey, dayState) {
   if (!dayState.lastVisited) {
     return "Нет посещений";
   }
+  const lastVisitDate = getLastActiveDateForDay(dateKey, dayState);
+  return `Последний визит: ${formatTimeFromDate(lastVisitDate)}`;
+}
+
+function getLastActiveDateForDay(dateKey, dayState, fallbackDate = new Date()) {
+  if (!dayState.lastVisited) {
+    return fallbackDate;
+  }
   const lastVisitDate = new Date(dayState.lastVisited);
   if (!isCurrentDay(dateKey)) {
     const boundary = parseDateKey(dateKey);
@@ -132,7 +140,7 @@ function getLastVisitDisplay(dateKey, dayState) {
       lastVisitDate.setTime(boundary.getTime());
     }
   }
-  return `Последний визит: ${formatTimeFromDate(lastVisitDate)}`;
+  return lastVisitDate;
 }
 
 function getIntervalLabel(index, startTime) {
@@ -371,11 +379,15 @@ function updateCurrentDayProgress({ updateLastVisited = true } = {}) {
   const dayState = ensureDayState(currentDayKey);
   const startTime = parseStartTime(dayState.startTime);
   const now = new Date();
-  dayState.frozenElapsed = getElapsedCellsNow(currentDayKey, startTime);
+  const referenceDate = updateLastVisited
+    ? now
+    : getLastActiveDateForDay(currentDayKey, dayState, now);
+  const startDate = getStartDateForDay(currentDayKey, startTime);
+  dayState.frozenElapsed = getElapsedCellsBetween(startDate, referenceDate);
   if (updateLastVisited) {
     dayState.lastVisited = now.toISOString();
   }
-  dayState.endTime = formatTimeFromDate(now);
+  dayState.endTime = formatTimeFromDate(referenceDate);
   saveStorage();
   renderDaysList();
 }

@@ -397,15 +397,20 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
-  color: #0f172a;
+  color: #3b3b45;
   text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
 }
 
 .matrix__cell.has-time span {
   pointer-events: none;
+}
+
+.matrix__cell.current {
+  outline: 2px solid #ef4444;
+  outline-offset: -2px;
 }
 
 @media (max-width: 720px) {
@@ -429,5 +434,15 @@ body {
 
   .matrix {
     align-self: start;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app {
+    max-width: 1240px;
+  }
+
+  .app__layout {
+    grid-template-columns: minmax(0, 1fr) 380px;
   }
 }

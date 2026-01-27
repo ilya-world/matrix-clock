@@ -963,7 +963,7 @@ function updateCellConnections() {
     return;
   }
   const columns = getGridColumnCount();
-  cells.forEach((cell) => cell.classList.remove("connect-right"));
+  cells.forEach((cell) => cell.classList.remove("connect-right", "connect-left"));
   for (let i = 0; i < cells.length - 1; i += 1) {
     if ((i + 1) % columns === 0) {
       continue;
@@ -982,6 +982,7 @@ function updateCellConnections() {
       continue;
     }
     cells[i].classList.add("connect-right");
+    cells[i + 1].classList.add("connect-left");
   }
 }
 

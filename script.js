@@ -9,17 +9,24 @@ const labelInput = document.getElementById("labelInput");
 const paletteList = document.getElementById("paletteList");
 const eraserButton = document.getElementById("eraser");
 const cellTimeToggle = document.getElementById("cellTimeToggle");
+const importButton = document.getElementById("importButton");
+const importModal = document.getElementById("importModal");
+const importTextarea = document.getElementById("importTextarea");
+const importSubmit = document.getElementById("importSubmit");
+const importStatus = document.getElementById("importStatus");
 
 const baseCells = 100;
 const minutesPerCell = 10;
 const msPerCell = minutesPerCell * 60 * 1000;
 const dayBoundaryMinutes = 4 * 60;
 const storageKey = "matrix-clock-days-v1";
+const meetingPalette = { label: "Встреча", color: "#0000FF" };
 
 let palette = [];
 let paletteById = new Map();
 let activePaletteId = null;
 let userPaint = new Map();
+let userComments = new Map();
 let showCellTime = false;
 
 let updateTimeoutId = null;
@@ -59,6 +66,7 @@ function createDayState(dateKey) {
     startTime: "07:00",
     endTime: "04:00",
     paints: {},
+    comments: {},
     frozenElapsed: 0,
     lastVisited: null,
   };
@@ -237,6 +245,7 @@ function applyUserPaint(cell) {
     cell.style.background = "";
     cell.classList.remove("user-painted");
   }
+  updateCellTooltip(cell, parseStartTime(startTimeInput.value));
 }
 
 function createCell(index, type, startTime, isCurrent) {
@@ -263,9 +272,9 @@ function createCell(index, type, startTime, isCurrent) {
     cell.classList.add("has-time");
     cell.innerHTML = `<span>${hours}</span><span>${minutes}</span>`;
   }
-  cell.title = getIntervalLabel(index, startTime);
   cell.addEventListener("click", () => handleCellPaint(cell));
   applyUserPaint(cell);
+  updateCellTooltip(cell, startTime);
   return cell;
 }
 
@@ -361,6 +370,7 @@ function handleCellPaint(cell) {
   const index = Number(cell.dataset.index);
   if (activePaletteId === null) {
     userPaint.delete(index);
+    userComments.delete(index);
   } else {
     userPaint.set(index, activePaletteId);
   }
@@ -375,6 +385,7 @@ function persistSelectedDay() {
   storage.palette = [...palette];
   storage.showCellTime = showCellTime;
   dayState.paints = Object.fromEntries(userPaint);
+  dayState.comments = Object.fromEntries(userComments);
   storage.activeDayKey = selectedDayKey;
   saveStorage();
   renderDaysList();
@@ -480,6 +491,12 @@ function loadDay(dateKey) {
   userPaint = new Map(
     Object.entries(dayState.paints || {}).map(([index, id]) => [Number(index), id])
   );
+  userComments = new Map(
+    Object.entries(dayState.comments || {}).map(([index, comment]) => [
+      Number(index),
+      comment,
+    ])
+  );
   syncPaletteLookup();
   renderPaletteList();
   setActivePalette(null);
@@ -532,6 +549,7 @@ function removePaletteItem(id) {
   userPaint.forEach((paintId, index) => {
     if (paintId === id) {
       userPaint.delete(index);
+      userComments.delete(index);
     }
   });
   if (activePaletteId === id) {
@@ -596,6 +614,131 @@ endTimeInput.addEventListener("change", () => {
   saveStorage();
   renderGrid();
   renderDaysList();
+});
+
+function updateCellTooltip(cell, startTime) {
+  const index = Number(cell.dataset.index);
+  const interval = getIntervalLabel(index, startTime);
+  const paletteId = userPaint.get(index);
+  const label = paletteById.get(paletteId)?.label || "Без категории";
+  const comment = userComments.get(index) || "—";
+  cell.title = `${interval}\nНазначение: ${label}\nКомментарий: ${comment}`;
+}
+
+function setImportModalOpen(isOpen) {
+  importModal.classList.toggle("is-open", isOpen);
+  importModal.setAttribute("aria-hidden", String(!isOpen));
+  if (isOpen) {
+    importTextarea.focus();
+  } else {
+    importTextarea.value = "";
+    importStatus.textContent = "";
+  }
+}
+
+function getMeetingPaletteId() {
+  const existing = palette.find(
+    (item) =>
+      item.label.toLowerCase() === meetingPalette.label.toLowerCase() &&
+      item.color.toLowerCase() === meetingPalette.color.toLowerCase()
+  );
+  if (existing) {
+    return existing.id;
+  }
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const paletteItem = { id, ...meetingPalette };
+  palette.push(paletteItem);
+  syncPaletteLookup();
+  addPaletteItem(paletteItem);
+  return id;
+}
+
+function parseMeetingLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = trimmed.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})\s+(.+)$/);
+  if (!match) {
+    return { error: trimmed };
+  }
+  return { start: match[1], end: match[2], name: match[3].trim() };
+}
+
+function toMinutes(timeValue) {
+  const { hours, minutes } = parseStartTime(timeValue);
+  return hours * 60 + minutes;
+}
+
+function importMeetingsFromText(text) {
+  const lines = text.split("\n");
+  const errors = [];
+  const meetingId = getMeetingPaletteId();
+  const dayStart = parseStartTime(startTimeInput.value);
+  const dayStartMinutes = dayStart.hours * 60 + dayStart.minutes;
+  const maxCells = Math.max(baseCells, grid.children.length);
+
+  lines.forEach((line) => {
+    const parsed = parseMeetingLine(line);
+    if (!parsed) {
+      return;
+    }
+    if (parsed.error) {
+      errors.push(parsed.error);
+      return;
+    }
+    const startMinutes = toMinutes(parsed.start);
+    let endMinutes = toMinutes(parsed.end);
+    if (endMinutes <= startMinutes) {
+      endMinutes += 24 * 60;
+    }
+    let startOffset = startMinutes - dayStartMinutes;
+    let endOffset = endMinutes - dayStartMinutes;
+    if (endOffset <= 0) {
+      return;
+    }
+    if (startOffset < 0) {
+      startOffset = 0;
+    }
+    const startIndex = Math.floor(startOffset / minutesPerCell);
+    const endIndex = Math.ceil(endOffset / minutesPerCell) - 1;
+    const lastIndex = Math.max(0, maxCells - 1);
+    for (let i = startIndex; i <= endIndex; i += 1) {
+      if (i < 0 || i > lastIndex) {
+        continue;
+      }
+      userPaint.set(i, meetingId);
+      userComments.set(i, parsed.name);
+    }
+  });
+
+  persistSelectedDay();
+  renderGrid();
+
+  if (errors.length) {
+    return `Некоторые строки не распознаны: ${errors.slice(0, 3).join("; ")}`;
+  }
+  return "Встречи импортированы.";
+}
+
+importButton.addEventListener("click", () => {
+  setImportModalOpen(true);
+});
+
+importModal.addEventListener("click", (event) => {
+  if (event.target.closest("[data-modal-close]")) {
+    setImportModalOpen(false);
+  }
+});
+
+importSubmit.addEventListener("click", () => {
+  const text = importTextarea.value;
+  if (!text.trim()) {
+    importStatus.textContent = "Добавьте хотя бы одну встречу.";
+    return;
+  }
+  const status = importMeetingsFromText(text);
+  importStatus.textContent = status;
 });
 
 window.addEventListener("beforeunload", () => {

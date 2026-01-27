@@ -124,6 +124,33 @@
               </button>
             </form>
             <div id="paletteList" class="palette__list" aria-live="polite"></div>
+            <div id="paletteSettings" class="palette__settings" hidden>
+              <div class="palette__settings-header">
+                <h3>Настройка события</h3>
+              </div>
+              <label class="control">
+                <span>Название события</span>
+                <input
+                  id="paletteEditLabel"
+                  type="text"
+                  placeholder="Название"
+                  maxlength="24"
+                />
+              </label>
+              <label class="control">
+                <span>Цвет события</span>
+                <input id="paletteEditColor" type="color" value="#ff6fae" />
+              </label>
+              <div class="palette__settings-actions">
+                <button
+                  type="button"
+                  id="paletteDelete"
+                  class="button button--ghost"
+                >
+                  Удалить событие
+                </button>
+              </div>
+            </div>
           </section>
 
           <section class="card">

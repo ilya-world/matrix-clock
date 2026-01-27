@@ -14,6 +14,16 @@ const importModal = document.getElementById("importModal");
 const importTextarea = document.getElementById("importTextarea");
 const importSubmit = document.getElementById("importSubmit");
 const importStatus = document.getElementById("importStatus");
+const groupForm = document.getElementById("groupForm");
+const groupLabelInput = document.getElementById("groupLabelInput");
+const groupColorInput = document.getElementById("groupColorInput");
+const groupSelect = document.getElementById("groupSelect");
+const cellDetails = document.getElementById("cellDetails");
+const cellDetailsTime = document.getElementById("cellDetailsTime");
+const cellDetailsLabel = document.getElementById("cellDetailsLabel");
+const cellDetailsComment = document.getElementById("cellDetailsComment");
+const cellCopy = document.getElementById("cellCopy");
+const cellPaste = document.getElementById("cellPaste");
 
 const baseCells = 100;
 const minutesPerCell = 10;
@@ -21,13 +31,18 @@ const msPerCell = minutesPerCell * 60 * 1000;
 const dayBoundaryMinutes = 4 * 60;
 const storageKey = "matrix-clock-days-v1";
 const meetingPalette = { label: "Встреча", color: "#0000FF" };
+const defaultGroupId = "ungrouped";
 
 let palette = [];
+let paletteGroups = [];
 let paletteById = new Map();
 let activePaletteId = null;
+let isEraserActive = false;
 let userPaint = new Map();
 let userComments = new Map();
 let showCellTime = false;
+let inspectedCellIndex = null;
+let cellClipboard = null;
 
 let updateTimeoutId = null;
 let currentDayKey = getCurrentDayKey();
@@ -43,16 +58,29 @@ function loadStorage() {
     const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== "object") {
-      return { days: {}, activeDayKey: null, palette: [], showCellTime: false };
+      return {
+        days: {},
+        activeDayKey: null,
+        palette: [],
+        paletteGroups: [],
+        showCellTime: false,
+      };
     }
     return {
       days: parsed.days && typeof parsed.days === "object" ? parsed.days : {},
       activeDayKey: parsed.activeDayKey || null,
       palette: Array.isArray(parsed.palette) ? parsed.palette : [],
+      paletteGroups: Array.isArray(parsed.paletteGroups) ? parsed.paletteGroups : [],
       showCellTime: Boolean(parsed.showCellTime),
     };
   } catch (error) {
-    return { days: {}, activeDayKey: null, palette: [], showCellTime: false };
+    return {
+      days: {},
+      activeDayKey: null,
+      palette: [],
+      paletteGroups: [],
+      showCellTime: false,
+    };
   }
 }
 
@@ -232,6 +260,72 @@ function syncPaletteLookup() {
   paletteById = new Map(palette.map((item) => [item.id, item]));
 }
 
+function ensureDefaultGroup() {
+  if (!paletteGroups.find((group) => group.id === defaultGroupId)) {
+    paletteGroups.unshift({ id: defaultGroupId, label: "Без группы", color: "" });
+  }
+}
+
+function normalizePaletteGroups() {
+  paletteGroups = Array.isArray(paletteGroups) ? [...paletteGroups] : [];
+  ensureDefaultGroup();
+  paletteGroups = paletteGroups.filter(
+    (group, index, self) =>
+      group &&
+      typeof group.id === "string" &&
+      self.findIndex((entry) => entry.id === group.id) === index
+  );
+  if (!paletteGroups.length) {
+    paletteGroups.push({ id: defaultGroupId, label: "Без группы", color: "" });
+  }
+  if (paletteGroups[0].id !== defaultGroupId) {
+    const defaultGroup = paletteGroups.find((group) => group.id === defaultGroupId);
+    paletteGroups = [
+      defaultGroup || { id: defaultGroupId, label: "Без группы", color: "" },
+      ...paletteGroups.filter((group) => group.id !== defaultGroupId),
+    ];
+  }
+}
+
+function normalizePaletteItems() {
+  palette = palette.map((item) => ({
+    ...item,
+    groupId: item.groupId || defaultGroupId,
+  }));
+}
+
+function updateGroupSelectOptions() {
+  groupSelect.innerHTML = "";
+  paletteGroups.forEach((group) => {
+    const option = document.createElement("option");
+    option.value = group.id;
+    option.textContent = group.label;
+    groupSelect.appendChild(option);
+  });
+  if (!groupSelect.value || !getGroupById(groupSelect.value)) {
+    groupSelect.value = defaultGroupId;
+  }
+}
+
+function getGroupById(id) {
+  return paletteGroups.find((group) => group.id === id);
+}
+
+function setSelectionNone() {
+  activePaletteId = null;
+  isEraserActive = false;
+  updateSelectionUI();
+  hideCellDetails();
+}
+
+function updateSelectionUI() {
+  const items = paletteList.querySelectorAll(".palette__item");
+  items.forEach((item) => {
+    item.classList.toggle("active", item.dataset.id === activePaletteId);
+  });
+  eraserButton.classList.toggle("active", isEraserActive);
+}
+
 function applyUserPaint(cell) {
   const index = Number(cell.dataset.index);
   const paletteId = userPaint.get(index);
@@ -306,6 +400,7 @@ function renderGrid() {
     const cell = createCell(i, type, startTime, isCurrent && i === elapsed);
     grid.appendChild(cell);
   }
+  renderCellDetails();
 }
 
 function scheduleGridUpdate() {
@@ -331,13 +426,106 @@ function scheduleGridUpdate() {
 
 function renderPaletteList() {
   paletteList.innerHTML = "";
-  palette.forEach((item) => addPaletteItem(item));
+  paletteGroups.forEach((group) => {
+    const groupElement = document.createElement("div");
+    groupElement.className = "palette__group";
+    groupElement.dataset.groupId = group.id;
+    const header = document.createElement("div");
+    header.className = "palette__group-header";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "palette__group-title";
+    const title = document.createElement("strong");
+    title.textContent = group.label;
+    const actions = document.createElement("div");
+    actions.className = "palette__group-actions";
+
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "button button--ghost";
+    addButton.textContent = "＋";
+    addButton.setAttribute("aria-label", `Добавить событие в группу ${group.label}`);
+    addButton.addEventListener("click", () => {
+      groupSelect.value = group.id;
+      if (group.color) {
+        colorInput.value = group.color;
+      }
+      labelInput.focus();
+    });
+
+    actions.appendChild(addButton);
+
+    if (group.id !== defaultGroupId) {
+      const removeGroupButton = document.createElement("button");
+      removeGroupButton.type = "button";
+      removeGroupButton.className = "palette__group-remove";
+      removeGroupButton.textContent = "Удалить";
+      removeGroupButton.addEventListener("click", () => {
+        removePaletteGroup(group.id);
+      });
+      actions.appendChild(removeGroupButton);
+    }
+
+    titleRow.appendChild(title);
+    titleRow.appendChild(actions);
+
+    const colorRow = document.createElement("label");
+    colorRow.className = "palette__group-color";
+    colorRow.innerHTML = `<span>Цвет по умолчанию</span>`;
+    const colorPicker = document.createElement("input");
+    colorPicker.type = "color";
+    colorPicker.value = group.color || "#ffffff";
+    colorPicker.addEventListener("change", () => {
+      group.color = colorPicker.value;
+      persistPaletteState();
+    });
+    colorRow.appendChild(colorPicker);
+
+    header.appendChild(titleRow);
+    header.appendChild(colorRow);
+
+    const itemsWrap = document.createElement("div");
+    itemsWrap.className = "palette__group-items";
+    const items = palette.filter((item) => item.groupId === group.id);
+    items.forEach((item) => addPaletteItem(item, itemsWrap));
+
+    groupElement.appendChild(header);
+    groupElement.appendChild(itemsWrap);
+
+    groupElement.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      groupElement.classList.add("is-drop-target");
+    });
+    groupElement.addEventListener("dragleave", () => {
+      groupElement.classList.remove("is-drop-target");
+    });
+    groupElement.addEventListener("drop", (event) => {
+      event.preventDefault();
+      groupElement.classList.remove("is-drop-target");
+      const paletteId = event.dataTransfer.getData("text/plain");
+      if (!paletteId) {
+        return;
+      }
+      movePaletteItemToGroup(paletteId, group.id);
+    });
+
+    paletteList.appendChild(groupElement);
+  });
+  updateSelectionUI();
 }
 
-function addPaletteItem({ id, color, label }) {
+function addPaletteItem({ id, color, label }, container = paletteList) {
   const item = document.createElement("div");
   item.className = "palette__item";
   item.dataset.id = id;
+  item.draggable = true;
+  item.addEventListener("dragstart", (event) => {
+    item.classList.add("dragging");
+    event.dataTransfer.setData("text/plain", id);
+  });
+  item.addEventListener("dragend", () => {
+    item.classList.remove("dragging");
+  });
   const selectButton = document.createElement("button");
   selectButton.type = "button";
   selectButton.className = "palette__select";
@@ -350,32 +538,47 @@ function addPaletteItem({ id, color, label }) {
   removeButton.textContent = "×";
   removeButton.addEventListener("click", (event) => {
     event.stopPropagation();
-    removePaletteItem(id);
+    if (removeButton.classList.contains("is-confirm")) {
+      removePaletteItem(id);
+      return;
+    }
+    removeButton.classList.add("is-confirm");
   });
   item.appendChild(selectButton);
   item.appendChild(removeButton);
-  paletteList.appendChild(item);
+  container.appendChild(item);
 }
 
 function setActivePalette(id) {
+  if (activePaletteId === id && !isEraserActive) {
+    setSelectionNone();
+    return;
+  }
   activePaletteId = id;
-  const items = paletteList.querySelectorAll(".palette__item");
-  items.forEach((item) => {
-    item.classList.toggle("active", item.dataset.id === id);
-  });
-  eraserButton.classList.toggle("active", id === null);
+  isEraserActive = false;
+  updateSelectionUI();
+  hideCellDetails();
 }
 
 function handleCellPaint(cell) {
   const index = Number(cell.dataset.index);
-  if (activePaletteId === null) {
+  if (isEraserActive) {
     userPaint.delete(index);
     userComments.delete(index);
-  } else {
-    userPaint.set(index, activePaletteId);
+    applyUserPaint(cell);
+    persistSelectedDay();
+    renderCellDetails();
+    return;
   }
-  applyUserPaint(cell);
-  persistSelectedDay();
+  if (activePaletteId) {
+    userPaint.set(index, activePaletteId);
+    applyUserPaint(cell);
+    persistSelectedDay();
+    renderCellDetails();
+    return;
+  }
+  inspectedCellIndex = index;
+  renderCellDetails();
 }
 
 function persistSelectedDay() {
@@ -383,6 +586,7 @@ function persistSelectedDay() {
   dayState.startTime = startTimeInput.value;
   dayState.endTime = endTimeInput.value;
   storage.palette = [...palette];
+  storage.paletteGroups = [...paletteGroups];
   storage.showCellTime = showCellTime;
   dayState.paints = Object.fromEntries(userPaint);
   dayState.comments = Object.fromEntries(userComments);
@@ -486,6 +690,11 @@ function loadDay(dateKey) {
   startTimeInput.value = dayState.startTime || "07:00";
   endTimeInput.value = dayState.endTime || "04:00";
   palette = Array.isArray(storage.palette) ? [...storage.palette] : [];
+  paletteGroups = Array.isArray(storage.paletteGroups)
+    ? [...storage.paletteGroups]
+    : [];
+  normalizePaletteGroups();
+  normalizePaletteItems();
   showCellTime = Boolean(storage.showCellTime);
   cellTimeToggle.checked = showCellTime;
   userPaint = new Map(
@@ -498,8 +707,9 @@ function loadDay(dateKey) {
     ])
   );
   syncPaletteLookup();
+  updateGroupSelectOptions();
   renderPaletteList();
-  setActivePalette(null);
+  setSelectionNone();
   updateEndTimeState();
   renderGrid();
   renderDaysList();
@@ -553,12 +763,39 @@ function removePaletteItem(id) {
     }
   });
   if (activePaletteId === id) {
-    setActivePalette(null);
+    setSelectionNone();
   }
-  storage.palette = [...palette];
-  saveStorage();
+  persistPaletteState();
   renderPaletteList();
   renderGrid();
+}
+
+function removePaletteGroup(groupId) {
+  if (groupId === defaultGroupId) {
+    return;
+  }
+  palette = palette.map((item) =>
+    item.groupId === groupId ? { ...item, groupId: defaultGroupId } : item
+  );
+  paletteGroups = paletteGroups.filter((group) => group.id !== groupId);
+  persistPaletteState();
+  renderPaletteList();
+}
+
+function persistPaletteState() {
+  storage.palette = [...palette];
+  storage.paletteGroups = [...paletteGroups];
+  saveStorage();
+}
+
+function movePaletteItemToGroup(paletteId, groupId) {
+  const item = palette.find((entry) => entry.id === paletteId);
+  if (!item || item.groupId === groupId) {
+    return;
+  }
+  item.groupId = groupId;
+  persistPaletteState();
+  renderPaletteList();
 }
 
 paletteForm.addEventListener("submit", (event) => {
@@ -568,18 +805,26 @@ paletteForm.addEventListener("submit", (event) => {
   if (!color || !label) {
     return;
   }
+  const groupId = groupSelect.value || defaultGroupId;
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const paletteItem = { id, color, label };
+  const paletteItem = { id, color, label, groupId };
   palette.push(paletteItem);
   syncPaletteLookup();
-  addPaletteItem(paletteItem);
+  persistPaletteState();
+  renderPaletteList();
   labelInput.value = "";
   setActivePalette(id);
-  persistSelectedDay();
 });
 
 eraserButton.addEventListener("click", () => {
-  setActivePalette(null);
+  if (isEraserActive) {
+    setSelectionNone();
+    return;
+  }
+  activePaletteId = null;
+  isEraserActive = true;
+  updateSelectionUI();
+  hideCellDetails();
 });
 
 cellTimeToggle.addEventListener("change", () => {
@@ -620,9 +865,30 @@ function updateCellTooltip(cell, startTime) {
   const index = Number(cell.dataset.index);
   const interval = getIntervalLabel(index, startTime);
   const paletteId = userPaint.get(index);
-  const label = paletteById.get(paletteId)?.label || "Без категории";
+  const label = paletteById.get(paletteId)?.label || "Без события";
   const comment = userComments.get(index) || "—";
   cell.title = `${interval}\nНазначение: ${label}\nКомментарий: ${comment}`;
+}
+
+function hideCellDetails() {
+  inspectedCellIndex = null;
+  cellDetails.hidden = true;
+}
+
+function renderCellDetails() {
+  if (inspectedCellIndex === null) {
+    cellDetails.hidden = true;
+    return;
+  }
+  const startTime = parseStartTime(startTimeInput.value);
+  const interval = getIntervalLabel(inspectedCellIndex, startTime);
+  const paletteId = userPaint.get(inspectedCellIndex);
+  const label = paletteById.get(paletteId)?.label || "Без события";
+  const comment = userComments.get(inspectedCellIndex) || "";
+  cellDetailsTime.textContent = interval;
+  cellDetailsLabel.textContent = label;
+  cellDetailsComment.value = comment;
+  cellDetails.hidden = false;
 }
 
 function setImportModalOpen(isOpen) {
@@ -646,10 +912,11 @@ function getMeetingPaletteId() {
     return existing.id;
   }
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const paletteItem = { id, ...meetingPalette };
+  const paletteItem = { id, ...meetingPalette, groupId: defaultGroupId };
   palette.push(paletteItem);
   syncPaletteLookup();
-  addPaletteItem(paletteItem);
+  persistPaletteState();
+  renderPaletteList();
   return id;
 }
 
@@ -741,6 +1008,78 @@ importSubmit.addEventListener("click", () => {
   importStatus.textContent = status;
 });
 
+groupForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const label = groupLabelInput.value.trim();
+  if (!label) {
+    return;
+  }
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const color = groupColorInput.value.trim();
+  paletteGroups.push({ id, label, color });
+  normalizePaletteGroups();
+  updateGroupSelectOptions();
+  persistPaletteState();
+  renderPaletteList();
+  groupLabelInput.value = "";
+});
+
+groupSelect.addEventListener("change", () => {
+  const group = getGroupById(groupSelect.value);
+  if (group?.color) {
+    colorInput.value = group.color;
+  }
+});
+
+cellDetailsComment.addEventListener("input", () => {
+  if (inspectedCellIndex === null) {
+    return;
+  }
+  const value = cellDetailsComment.value;
+  if (value.trim()) {
+    userComments.set(inspectedCellIndex, value);
+  } else {
+    userComments.delete(inspectedCellIndex);
+  }
+  persistSelectedDay();
+  const cell = grid.querySelector(`[data-index="${inspectedCellIndex}"]`);
+  if (cell) {
+    updateCellTooltip(cell, parseStartTime(startTimeInput.value));
+  }
+});
+
+cellCopy.addEventListener("click", () => {
+  if (inspectedCellIndex === null) {
+    return;
+  }
+  cellClipboard = {
+    paletteId: userPaint.get(inspectedCellIndex) || null,
+    comment: userComments.get(inspectedCellIndex) || "",
+  };
+});
+
+cellPaste.addEventListener("click", () => {
+  if (inspectedCellIndex === null || !cellClipboard) {
+    return;
+  }
+  if (cellClipboard.paletteId) {
+    userPaint.set(inspectedCellIndex, cellClipboard.paletteId);
+  } else {
+    userPaint.delete(inspectedCellIndex);
+  }
+  if (cellClipboard.comment) {
+    userComments.set(inspectedCellIndex, cellClipboard.comment);
+  } else {
+    userComments.delete(inspectedCellIndex);
+  }
+  const cell = grid.querySelector(`[data-index="${inspectedCellIndex}"]`);
+  if (cell) {
+    applyUserPaint(cell);
+  }
+  persistSelectedDay();
+  renderCellDetails();
+});
+
 window.addEventListener("beforeunload", () => {
   persistSelectedDay();
   if (isCurrentDay(selectedDayKey)) {
@@ -759,7 +1098,13 @@ if (!storage.palette.length) {
 
 showCellTime = Boolean(storage.showCellTime);
 cellTimeToggle.checked = showCellTime;
-setActivePalette(null);
+paletteGroups = Array.isArray(storage.paletteGroups)
+  ? [...storage.paletteGroups]
+  : [];
+normalizePaletteGroups();
+normalizePaletteItems();
+updateGroupSelectOptions();
+setSelectionNone();
 loadDay(selectedDayKey);
 updateCurrentDayProgress();
 window.setInterval(checkDayRollover, 60000);

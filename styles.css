@@ -565,7 +565,7 @@ body {
   width: calc(var(--grid-gap) + 2px);
   height: calc(100% - 2px);
   background: var(--link-color, #f1f3f7);
-  border-radius: calc(var(--cell-radius) - 2px);
+  border-radius: 0;
 }
 
 .matrix__cell.connect-right {

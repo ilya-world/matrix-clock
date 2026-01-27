@@ -18,6 +18,10 @@ const groupForm = document.getElementById("groupForm");
 const groupLabelInput = document.getElementById("groupLabelInput");
 const groupColorInput = document.getElementById("groupColorInput");
 const groupSelect = document.getElementById("groupSelect");
+const paletteSettings = document.getElementById("paletteSettings");
+const paletteEditLabel = document.getElementById("paletteEditLabel");
+const paletteEditColor = document.getElementById("paletteEditColor");
+const paletteDelete = document.getElementById("paletteDelete");
 const cellDetails = document.getElementById("cellDetails");
 const cellDetailsTime = document.getElementById("cellDetailsTime");
 const cellDetailsLabel = document.getElementById("cellDetailsLabel");
@@ -43,6 +47,8 @@ let userComments = new Map();
 let showCellTime = false;
 let inspectedCellIndex = null;
 let cellClipboard = null;
+let isPointerDown = false;
+let dragAction = null;
 
 let updateTimeoutId = null;
 let currentDayKey = getCurrentDayKey();
@@ -324,6 +330,18 @@ function updateSelectionUI() {
     item.classList.toggle("active", item.dataset.id === activePaletteId);
   });
   eraserButton.classList.toggle("active", isEraserActive);
+  updatePaletteSettings();
+}
+
+function updatePaletteSettings() {
+  const activeItem = paletteById.get(activePaletteId);
+  if (!activeItem) {
+    paletteSettings.hidden = true;
+    return;
+  }
+  paletteSettings.hidden = false;
+  paletteEditLabel.value = activeItem.label;
+  paletteEditColor.value = activeItem.color;
 }
 
 function applyUserPaint(cell) {
@@ -333,10 +351,13 @@ function applyUserPaint(cell) {
   if (paint) {
     const isPast =
       cell.classList.contains("elapsed") || cell.classList.contains("overflow");
-    cell.style.background = isPast ? paint.color : mixWithWhite(paint.color);
+    const paintColor = isPast ? paint.color : mixWithWhite(paint.color);
+    cell.style.background = paintColor;
+    cell.style.setProperty("--link-color", paintColor);
     cell.classList.add("user-painted");
   } else {
     cell.style.background = "";
+    cell.style.removeProperty("--link-color");
     cell.classList.remove("user-painted");
   }
   updateCellTooltip(cell, parseStartTime(startTimeInput.value));
@@ -367,6 +388,27 @@ function createCell(index, type, startTime, isCurrent) {
     cell.innerHTML = `<span>${hours}</span><span>${minutes}</span>`;
   }
   cell.addEventListener("click", () => handleCellPaint(cell));
+  cell.addEventListener("pointerdown", (event) => {
+    if (!activePaletteId && !isEraserActive) {
+      return;
+    }
+    event.preventDefault();
+    isPointerDown = true;
+    dragAction = activePaletteId ? "paint" : "erase";
+    handleCellPaint(cell);
+  });
+  cell.addEventListener("pointerenter", () => {
+    if (!isPointerDown || !dragAction) {
+      return;
+    }
+    if (dragAction === "paint" && activePaletteId) {
+      paintCell(cell);
+      return;
+    }
+    if (dragAction === "erase" && isEraserActive) {
+      eraseCell(cell);
+    }
+  });
   applyUserPaint(cell);
   updateCellTooltip(cell, startTime);
   return cell;
@@ -401,6 +443,7 @@ function renderGrid() {
     grid.appendChild(cell);
   }
   renderCellDetails();
+  updateCellConnections();
 }
 
 function scheduleGridUpdate() {
@@ -560,25 +603,46 @@ function setActivePalette(id) {
   hideCellDetails();
 }
 
+function paintCell(cell) {
+  if (!activePaletteId) {
+    return;
+  }
+  const index = Number(cell.dataset.index);
+  userPaint.set(index, activePaletteId);
+  applyUserPaint(cell);
+  persistSelectedDay();
+  updateCellConnections();
+}
+
+function eraseCell(cell) {
+  const index = Number(cell.dataset.index);
+  userPaint.delete(index);
+  userComments.delete(index);
+  applyUserPaint(cell);
+  persistSelectedDay();
+  updateCellConnections();
+}
+
 function handleCellPaint(cell) {
   const index = Number(cell.dataset.index);
   if (isEraserActive) {
-    userPaint.delete(index);
-    userComments.delete(index);
-    applyUserPaint(cell);
-    persistSelectedDay();
+    eraseCell(cell);
     renderCellDetails();
     return;
   }
   if (activePaletteId) {
-    userPaint.set(index, activePaletteId);
-    applyUserPaint(cell);
-    persistSelectedDay();
+    paintCell(cell);
     renderCellDetails();
+    return;
+  }
+  if (inspectedCellIndex === index) {
+    hideCellDetails();
+    updateInspectedCellHighlight();
     return;
   }
   inspectedCellIndex = index;
   renderCellDetails();
+  updateInspectedCellHighlight();
 }
 
 function persistSelectedDay() {
@@ -870,14 +934,67 @@ function updateCellTooltip(cell, startTime) {
   cell.title = `${interval}\nНазначение: ${label}\nКомментарий: ${comment}`;
 }
 
+function updateInspectedCellHighlight() {
+  grid.querySelectorAll(".matrix__cell.is-selected").forEach((cell) => {
+    cell.classList.remove("is-selected");
+  });
+  if (inspectedCellIndex === null) {
+    return;
+  }
+  const selected = grid.querySelector(`[data-index="${inspectedCellIndex}"]`);
+  if (selected) {
+    selected.classList.add("is-selected");
+  }
+}
+
+function getGridColumnCount() {
+  const columns = window
+    .getComputedStyle(grid)
+    .getPropertyValue("grid-template-columns");
+  if (!columns) {
+    return 10;
+  }
+  return columns.split(" ").length || 10;
+}
+
+function updateCellConnections() {
+  const cells = Array.from(grid.querySelectorAll(".matrix__cell"));
+  if (!cells.length) {
+    return;
+  }
+  const columns = getGridColumnCount();
+  cells.forEach((cell) => cell.classList.remove("connect-right"));
+  for (let i = 0; i < cells.length - 1; i += 1) {
+    if ((i + 1) % columns === 0) {
+      continue;
+    }
+    const paletteId = userPaint.get(i);
+    if (!paletteId) {
+      continue;
+    }
+    const nextPaletteId = userPaint.get(i + 1);
+    if (paletteId !== nextPaletteId) {
+      continue;
+    }
+    const comment = userComments.get(i) || "";
+    const nextComment = userComments.get(i + 1) || "";
+    if (comment !== nextComment) {
+      continue;
+    }
+    cells[i].classList.add("connect-right");
+  }
+}
+
 function hideCellDetails() {
   inspectedCellIndex = null;
   cellDetails.hidden = true;
+  updateInspectedCellHighlight();
 }
 
 function renderCellDetails() {
   if (inspectedCellIndex === null) {
     cellDetails.hidden = true;
+    updateInspectedCellHighlight();
     return;
   }
   const startTime = parseStartTime(startTimeInput.value);
@@ -889,6 +1006,7 @@ function renderCellDetails() {
   cellDetailsLabel.textContent = label;
   cellDetailsComment.value = comment;
   cellDetails.hidden = false;
+  updateInspectedCellHighlight();
 }
 
 function setImportModalOpen(isOpen) {
@@ -1046,6 +1164,7 @@ cellDetailsComment.addEventListener("input", () => {
   if (cell) {
     updateCellTooltip(cell, parseStartTime(startTimeInput.value));
   }
+  updateCellConnections();
 });
 
 cellCopy.addEventListener("click", () => {
@@ -1085,6 +1204,63 @@ window.addEventListener("beforeunload", () => {
   if (isCurrentDay(selectedDayKey)) {
     updateCurrentDayProgress();
   }
+});
+
+window.addEventListener("pointerup", () => {
+  isPointerDown = false;
+  dragAction = null;
+});
+
+window.addEventListener("pointercancel", () => {
+  isPointerDown = false;
+  dragAction = null;
+});
+
+window.addEventListener("resize", () => {
+  updateCellConnections();
+});
+
+paletteEditLabel.addEventListener("input", () => {
+  const activeItem = paletteById.get(activePaletteId);
+  if (!activeItem) {
+    return;
+  }
+  const value = paletteEditLabel.value.trim();
+  activeItem.label = value || "Без названия";
+  persistPaletteState();
+  renderPaletteList();
+  grid.querySelectorAll(".matrix__cell").forEach((cell) => {
+    const index = Number(cell.dataset.index);
+    if (userPaint.get(index) === activeItem.id) {
+      updateCellTooltip(cell, parseStartTime(startTimeInput.value));
+    }
+  });
+  renderCellDetails();
+});
+
+paletteEditColor.addEventListener("input", () => {
+  const activeItem = paletteById.get(activePaletteId);
+  if (!activeItem) {
+    return;
+  }
+  activeItem.color = paletteEditColor.value;
+  persistPaletteState();
+  renderPaletteList();
+  grid.querySelectorAll(".matrix__cell").forEach((cell) => {
+    const index = Number(cell.dataset.index);
+    if (userPaint.get(index) === activeItem.id) {
+      applyUserPaint(cell);
+    }
+  });
+  updateCellConnections();
+});
+
+paletteDelete.addEventListener("click", () => {
+  if (!activePaletteId) {
+    return;
+  }
+  removePaletteItem(activePaletteId);
+  paletteSettings.hidden = true;
 });
 
 if (!storage.palette.length) {

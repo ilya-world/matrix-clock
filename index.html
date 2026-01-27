@@ -24,6 +24,11 @@
             <span class="legend legend--overflow">Время за пределами 100 клеток</span>
           </div>
           <div id="grid" class="matrix__grid" aria-live="polite"></div>
+          <div class="matrix__actions">
+            <button type="button" id="importButton" class="button">
+              Импорт
+            </button>
+          </div>
         </section>
 
         <aside class="sidebar">
@@ -83,6 +88,36 @@
         </aside>
       </div>
     </main>
+
+    <div id="importModal" class="modal" aria-hidden="true" role="dialog">
+      <div class="modal__backdrop" data-modal-close></div>
+      <div class="modal__content" role="document">
+        <div class="modal__header">
+          <h2>Импорт встреч</h2>
+          <button type="button" class="modal__close" data-modal-close>
+            ×
+          </button>
+        </div>
+        <p class="modal__hint">
+          Вставьте список встреч. Каждая строка: <strong>XX:XX-YY:YY NAME</strong>.
+        </p>
+        <textarea
+          id="importTextarea"
+          class="modal__textarea"
+          rows="8"
+          placeholder="09:00-10:00 Планирование&#10;11:30-12:10 Созвон"
+        ></textarea>
+        <div class="modal__actions">
+          <button type="button" class="button button--ghost" data-modal-close>
+            Отмена
+          </button>
+          <button type="button" id="importSubmit" class="button">
+            Импортировать
+          </button>
+        </div>
+        <p id="importStatus" class="modal__status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
 
     <script src="script.js"></script>
   </body>

@@ -325,6 +325,11 @@ body {
   gap: 16px;
 }
 
+.matrix__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .matrix__legend {
   display: flex;
   flex-wrap: wrap;
@@ -411,6 +416,92 @@ body {
 .matrix__cell.current {
   outline: 2px solid #ef4444;
   outline-offset: -2px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 20;
+}
+
+.modal.is-open {
+  display: flex;
+}
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.modal__content {
+  position: relative;
+  background: white;
+  padding: 24px;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 1;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal__header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal__close {
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+  color: #6e6e7c;
+}
+
+.modal__close:hover {
+  color: #2f6fed;
+}
+
+.modal__hint {
+  margin: 0;
+  font-size: 13px;
+  color: #5f5f6d;
+}
+
+.modal__textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #d4d7de;
+  padding: 12px;
+  font-size: 14px;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  resize: vertical;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modal__status {
+  margin: 0;
+  font-size: 12px;
+  color: #2f6fed;
+  min-height: 16px;
 }
 
 @media (max-width: 720px) {

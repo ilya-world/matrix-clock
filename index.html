@@ -24,6 +24,33 @@
             <span class="legend legend--overflow">Время за пределами 100 клеток</span>
           </div>
           <div id="grid" class="matrix__grid" aria-live="polite"></div>
+          <div id="cellDetails" class="cell-details" hidden>
+            <div class="cell-details__header">
+              <div>
+                <strong id="cellDetailsTime">00:00–00:10</strong>
+                <div class="cell-details__meta">
+                  <span id="cellDetailsLabel">Без события</span>
+                </div>
+              </div>
+              <div class="cell-details__actions">
+                <button type="button" id="cellCopy" class="button button--ghost">
+                  Копировать
+                </button>
+                <button type="button" id="cellPaste" class="button button--ghost">
+                  Вставить
+                </button>
+              </div>
+            </div>
+            <label class="control">
+              <span>Комментарий</span>
+              <textarea
+                id="cellDetailsComment"
+                class="cell-details__comment"
+                rows="3"
+                placeholder="Добавьте комментарий"
+              ></textarea>
+            </label>
+          </div>
           <div class="matrix__actions">
             <button type="button" id="importButton" class="button">
               Импорт
@@ -59,6 +86,10 @@
                 <input id="colorInput" type="color" value="#ff6fae" />
               </label>
               <label class="control">
+                <span>Группа</span>
+                <select id="groupSelect" class="palette__select-group"></select>
+              </label>
+              <label class="control">
                 <span>Назначение</span>
                 <input
                   id="labelInput"
@@ -71,6 +102,25 @@
               <button type="submit" class="button">Добавить</button>
               <button type="button" id="eraser" class="button button--ghost">
                 Ластик
+              </button>
+            </form>
+            <form id="groupForm" class="palette__group-form">
+              <label class="control">
+                <span>Новая группа</span>
+                <input
+                  id="groupLabelInput"
+                  type="text"
+                  placeholder="Например, дом"
+                  maxlength="24"
+                  required
+                />
+              </label>
+              <label class="control">
+                <span>Цвет группы</span>
+                <input id="groupColorInput" type="color" value="#7c8cff" />
+              </label>
+              <button type="submit" class="button button--ghost">
+                Добавить группу
               </button>
             </form>
             <div id="paletteList" class="palette__list" aria-live="polite"></div>
